@@ -236,13 +236,18 @@ static int sdcardfs_open(struct inode *inode, struct file *file)
 	struct dentry *parent = dget_parent(dentry);
 	struct sdcardfs_sb_info *sbi = SDCARDFS_SB(dentry->d_sb);
 	const struct cred *saved_cred = NULL;
+#ifdef CONFIG_OPLUS_FEATURE_FUSE_FS_SHORTCIRCUIT
+	struct fuse_package *fp = current->fpack;
+	char *iname;
+#endif /* CONFIG_OPLUS_FEATURE_FUSE_FS_SHORTCIRCUIT */
 
+	if (!(file->f_flags & O_CREAT)) {
 	/* don't open unhashed/deleted files */
-	if (d_unhashed(dentry)) {
-		err = -ENOENT;
-		goto out_err;
+		if (d_unhashed(dentry)) {
+			err = -ENOENT;
+			goto out_err;
+		}
 	}
-
 	if (!check_caller_access_to_name(d_inode(parent), &dentry->d_name)) {
 		err = -EACCES;
 		goto out_err;
@@ -275,6 +280,17 @@ static int sdcardfs_open(struct inode *inode, struct file *file)
 		}
 	} else {
 		sdcardfs_set_lower_file(file, lower_file);
+#ifdef CONFIG_OPLUS_FEATURE_FUSE_FS_SHORTCIRCUIT
+		if (!err && fp && fp->fuse_open_req && !fp->filp && fp->iname) {
+			iname = inode_name(inode);
+			if (iname && !strcasecmp(iname, fp->iname)) {
+				fp->filp = file;
+				get_file(file);
+			}
+			if (iname)
+				__putname(iname);
+		}
+#endif /* CONFIG_OPLUS_FEATURE_FUSE_FS_SHORTCIRCUIT */
 	}
 
 	if (err)

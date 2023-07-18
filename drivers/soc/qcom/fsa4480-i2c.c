@@ -18,10 +18,23 @@
 #include <linux/mutex.h>
 #include <linux/soc/qcom/fsa4480-i2c.h>
 
+#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+#include <linux/of_gpio.h>
+#include <linux/gpio.h>
+#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
+
 #define FSA4480_I2C_NAME	"fsa4480-driver"
 
+#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+#define HL5280_DEVICE_REG_VALUE 0x49
+
+#define FSA4480_DEVICE_ID  0x00
+#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
 #define FSA4480_SWITCH_SETTINGS 0x04
 #define FSA4480_SWITCH_CONTROL  0x05
+#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+#define FSA4480_SWITCH_STATUS0  0x06
+#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
 #define FSA4480_SWITCH_STATUS1  0x07
 #define FSA4480_SLOW_L          0x08
 #define FSA4480_SLOW_R          0x09
@@ -32,7 +45,24 @@
 #define FSA4480_DELAY_L_MIC     0x0E
 #define FSA4480_DELAY_L_SENSE   0x0F
 #define FSA4480_DELAY_L_AGND    0x10
+#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+#define FSA4480_FUN_EN          0x12
+#define FSA4480_JACK_STATUS     0x17
+#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
 #define FSA4480_RESET           0x1E
+
+
+#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+#undef dev_dbg
+#define dev_dbg dev_info
+#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
+
+#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+enum switch_vendor {
+    FSA4480 = 0,
+    HL5280
+};
+#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
 
 struct fsa4480_priv {
 	struct regmap *regmap;
@@ -43,6 +73,12 @@ struct fsa4480_priv {
 	struct work_struct usbc_analog_work;
 	struct blocking_notifier_head fsa4480_notifier;
 	struct mutex notification_lock;
+	#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+	unsigned int hs_det_pin;
+	#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
+	#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+	enum switch_vendor vendor;
+	#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
 };
 
 struct fsa4480_reg_val {
@@ -112,6 +148,11 @@ static int fsa4480_usbc_event_changed(struct notifier_block *nb,
 		return ret;
 	}
 
+	#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+	if (fsa_priv->vendor == HL5280) {
+		dev_err(fsa_priv->dev, "%s: switch chip is HL5280\n", __func__);
+	}
+	#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
 	dev_dbg(dev, "%s: USB change event received, supply mode %d, usbc mode %d, expected %d\n",
 		__func__, mode.intval, fsa_priv->usbc_mode.counter,
 		POWER_SUPPLY_TYPEC_SINK_AUDIO_ADAPTER);
@@ -139,7 +180,10 @@ static int fsa4480_usbc_analog_setup_switches(struct fsa4480_priv *fsa_priv)
 	int rc = 0;
 	union power_supply_propval mode;
 	struct device *dev;
-
+	#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+	unsigned int switch_status = 0;
+	unsigned int jack_status = 0;
+	#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
 	if (!fsa_priv)
 		return -EINVAL;
 	dev = fsa_priv->dev;
@@ -158,17 +202,52 @@ static int fsa4480_usbc_analog_setup_switches(struct fsa4480_priv *fsa_priv)
 	dev_dbg(dev, "%s: setting GPIOs active = %d\n",
 		__func__, mode.intval != POWER_SUPPLY_TYPEC_NONE);
 
+	#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+	dev_info(dev, "%s: USB mode %d\n", __func__, mode.intval);
+	#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
 	switch (mode.intval) {
 	/* add all modes FSA should notify for in here */
 	case POWER_SUPPLY_TYPEC_SINK_AUDIO_ADAPTER:
 		/* activate switches */
 		fsa4480_usbc_update_settings(fsa_priv, 0x00, 0x9F);
+		#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+		usleep_range(1000, 1005);
+		regmap_write(fsa_priv->regmap, FSA4480_FUN_EN, 0x45);
+		usleep_range(4000, 4005);
+		dev_info(dev, "%s: set reg[0x%x] done.\n", __func__, FSA4480_FUN_EN);
+
+		regmap_read(fsa_priv->regmap, FSA4480_JACK_STATUS, &jack_status);
+		dev_info(dev, "%s: reg[0x%x]=0x%x.\n", __func__, FSA4480_JACK_STATUS, jack_status);
+		if (jack_status & 0x2) {
+			//for 3 pole, mic switch to SBU2
+			dev_info(dev, "%s: set mic to sbu2 for 3 pole.\n", __func__);
+			fsa4480_usbc_update_settings(fsa_priv, 0x00, 0x9F);
+			usleep_range(4000, 4005);
+		}
+
+		regmap_read(fsa_priv->regmap, FSA4480_SWITCH_STATUS0, &switch_status);
+		dev_info(dev, "%s: reg[0x%x]=0x%x.\n", __func__, FSA4480_SWITCH_STATUS0, switch_status);
+		regmap_read(fsa_priv->regmap, FSA4480_SWITCH_STATUS1, &switch_status);
+		dev_info(dev, "%s: reg[0x%x]=0x%x.\n", __func__, FSA4480_SWITCH_STATUS1, switch_status);
+		#endif /* OPLUS_ARCH_EXTENDS */
 
 		/* notify call chain on event */
 		blocking_notifier_call_chain(&fsa_priv->fsa4480_notifier,
 		mode.intval, NULL);
+		#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+		if (gpio_is_valid(fsa_priv->hs_det_pin)) {
+			dev_info(dev, "%s: set hs_det_pin to low.\n", __func__);
+			gpio_direction_output(fsa_priv->hs_det_pin, 0);
+		}
+		#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
 		break;
 	case POWER_SUPPLY_TYPEC_NONE:
+		#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+		if (gpio_is_valid(fsa_priv->hs_det_pin)) {
+			dev_info(dev, "%s: set hs_det_pin to high.\n", __func__);
+			gpio_direction_output(fsa_priv->hs_det_pin, 1);
+		}
+		#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
 		/* notify call chain on event */
 		blocking_notifier_call_chain(&fsa_priv->fsa4480_notifier,
 				POWER_SUPPLY_TYPEC_NONE, NULL);
@@ -310,6 +389,10 @@ int fsa4480_switch_event(struct device_node *node,
 	if (!fsa_priv->regmap)
 		return -EINVAL;
 
+	#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+	pr_info("%s - switch event: %d\n", __func__, event);
+	#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
+
 	switch (event) {
 	case FSA_MIC_GND_SWAP:
 		regmap_read(fsa_priv->regmap, FSA4480_SWITCH_CONTROL,
@@ -337,11 +420,51 @@ int fsa4480_switch_event(struct device_node *node,
 }
 EXPORT_SYMBOL(fsa4480_switch_event);
 
+#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+static int fsa4480_parse_dt(struct fsa4480_priv *fsa_priv,
+	struct device *dev)
+{
+    struct device_node *dNode = dev->of_node;
+    int ret = 0;
+
+    if (dNode == NULL)
+        return -ENODEV;
+
+	if (!fsa_priv) {
+		pr_err("%s: fsa_priv is NULL\n", __func__);
+		return -ENOMEM;
+	}
+
+	fsa_priv->hs_det_pin = of_get_named_gpio(dNode,
+	        "fsa4480,hs-det-gpio", 0);
+	if (!gpio_is_valid(fsa_priv->hs_det_pin)) {
+	    pr_warning("%s: hs-det-gpio in dt node is missing\n", __func__);
+	    return -ENODEV;
+	}
+	ret = gpio_request(fsa_priv->hs_det_pin, "fsa4480_hs_det");
+	if (ret) {
+		pr_warning("%s: hs-det-gpio request fail\n", __func__);
+		return ret;
+	}
+
+	gpio_direction_output(fsa_priv->hs_det_pin, 1);
+
+	return ret;
+}
+#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
+
 static void fsa4480_usbc_analog_work_fn(struct work_struct *work)
 {
 	struct fsa4480_priv *fsa_priv =
 		container_of(work, struct fsa4480_priv, usbc_analog_work);
-
+	#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+	#else
+        #if defined(OPLUS_FEATURE_DP_MAX20328) && !defined(OPLUS_FEATURE_FSA4480)
+        #ifdef CONFIG_QCOM_MAX20328_I2C
+        return;
+        #endif
+        #endif /* OPLUS_FEATURE_DP_MAX20328 */
+	#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
 	if (!fsa_priv) {
 		pr_err("%s: fsa container invalid\n", __func__);
 		return;
@@ -364,6 +487,9 @@ static int fsa4480_probe(struct i2c_client *i2c,
 {
 	struct fsa4480_priv *fsa_priv;
 	int rc = 0;
+	#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+	unsigned int reg_value = 0;
+	#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
 
 	fsa_priv = devm_kzalloc(&i2c->dev, sizeof(*fsa_priv),
 				GFP_KERNEL);
@@ -371,6 +497,10 @@ static int fsa4480_probe(struct i2c_client *i2c,
 		return -ENOMEM;
 
 	fsa_priv->dev = &i2c->dev;
+
+	#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+	fsa4480_parse_dt(fsa_priv, &i2c->dev);
+	#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
 
 	fsa_priv->usb_psy = power_supply_get_by_name("usb");
 	if (!fsa_priv->usb_psy) {
@@ -394,6 +524,18 @@ static int fsa4480_probe(struct i2c_client *i2c,
 	}
 
 	fsa4480_update_reg_defaults(fsa_priv->regmap);
+
+	#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+	regmap_read(fsa_priv->regmap, FSA4480_DEVICE_ID, &reg_value);
+	dev_err(fsa_priv->dev, "%s: device id reg value: 0x%x\n", __func__, reg_value);
+	if (HL5280_DEVICE_REG_VALUE == reg_value) {
+		dev_err(fsa_priv->dev, "%s: switch chip is HL5280\n", __func__);
+		fsa_priv->vendor = HL5280;
+	} else {
+		dev_err(fsa_priv->dev, "%s: switch chip is FSA4480\n", __func__);
+		fsa_priv->vendor = FSA4480;
+	}
+	#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
 
 	fsa_priv->psy_nb.notifier_call = fsa4480_usbc_event_changed;
 	fsa_priv->psy_nb.priority = 0;
@@ -420,6 +562,11 @@ static int fsa4480_probe(struct i2c_client *i2c,
 err_supply:
 	power_supply_put(fsa_priv->usb_psy);
 err_data:
+	#ifdef REALME_19696_SPECIFIC_AUDIO_KERNEL
+	if (gpio_is_valid(fsa_priv->hs_det_pin)) {
+		gpio_free(fsa_priv->hs_det_pin);
+	}
+	#endif /* REALME_19696_SPECIFIC_AUDIO_KERNEL */
 	devm_kfree(&i2c->dev, fsa_priv);
 	return rc;
 }

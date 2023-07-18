@@ -30,6 +30,9 @@
 #define DEFAULT_PANEL_JITTER_DENOMINATOR	1
 #define DEFAULT_PANEL_JITTER_ARRAY_SIZE		2
 #define DEFAULT_PANEL_PREFILL_LINES	25
+#ifdef OPLUS_FEATURE_AOD_RAMLESS
+extern int skip_backlight;
+#endif /* OPLUS_FEATURE_AOD_RAMLESS */
 
 static struct dsi_display_mode_priv_info default_priv_info = {
 	.panel_jitter_numer = DEFAULT_PANEL_JITTER_NUMERATOR,
@@ -245,6 +248,10 @@ static void dsi_bridge_enable(struct drm_bridge *bridge)
 	}
 	display = c_bridge->display;
 
+#ifdef OPLUS_FEATURE_AOD_RAMLESS
+	skip_backlight = 2;
+#endif /*OPLUS_FEATURE_AOD_RAMLESS*/
+
 	rc = dsi_display_post_enable(display);
 	if (rc)
 		pr_err("[%d] DSI display post enabled failed, rc=%d\n",
@@ -279,6 +286,10 @@ static void dsi_bridge_disable(struct drm_bridge *bridge)
 			private_flags & MSM_MODE_FLAG_SEAMLESS_POMS;
 		sde_connector_helper_bridge_disable(display->drm_conn);
 	}
+
+#ifdef OPLUS_FEATURE_AOD_RAMLESS
+	skip_backlight = -1;
+#endif /*OPLUS_FEATURE_AOD_RAMLESS*/
 
 	rc = dsi_display_pre_disable(c_bridge->display);
 	if (rc) {
@@ -412,6 +423,9 @@ static bool dsi_bridge_mode_fixup(struct drm_bridge *bridge,
 		if (rc) {
 			pr_err("[%s] seamless mode mismatch failure rc=%d\n",
 				c_bridge->display->name, rc);
+		/*
+		 *note: orignal change was abandoned here due to compatibility
+		 */
 			return false;
 		}
 
@@ -440,6 +454,23 @@ static bool dsi_bridge_mode_fixup(struct drm_bridge *bridge,
 			(!crtc_state->active_changed ||
 			 display->is_cont_splash_enabled))
 			dsi_mode.dsi_mode_flags |= DSI_MODE_FLAG_DMS;
+
+#ifdef OPLUS_BUG_STABILITY
+        if (display->is_cont_splash_enabled)
+            dsi_mode.dsi_mode_flags &= ~DSI_MODE_FLAG_DMS;
+
+#ifdef OPLUS_FEATURE_AOD_RAMLESS
+		if (display->panel && display->panel->oppo_priv.is_aod_ramless) {
+			if (crtc_state->active_changed && (dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_DYN_CLK)) {
+				DSI_ERR("dyn clk changed when active_changed, WA to skip dyn clk change\n");
+				dsi_mode.dsi_mode_flags &= ~DSI_MODE_FLAG_DYN_CLK;
+			}
+
+			if (dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_DMS)
+				dsi_mode.dsi_mode_flags |= DSI_MODE_FLAG_SEAMLESS;
+		}
+#endif /* OPLUS_FEATURE_AOD_RAMLESS */
+#endif /* OPLUS_BUG_STABILITY */
 
 		/* Reject seemless transition when active/connectors changed.*/
 		if ((crtc_state->active_changed ||

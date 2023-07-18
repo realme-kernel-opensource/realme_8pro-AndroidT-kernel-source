@@ -1,5 +1,5 @@
 /* Copyright (c) 2010-2019, The Linux Foundation. All rights reserved.
- *
+ * Copyright (C) 2021 Oplus. All rights reserved
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
  * only version 2 as published by the Free Software Foundation.
@@ -46,7 +46,8 @@ static DEFINE_MUTEX(scm_lock);
 DEFINE_MUTEX(scm_lmh_lock);
 
 #define SCM_EBUSY_WAIT_MS 30
-#define SCM_EBUSY_MAX_RETRY 67
+/*#define SCM_EBUSY_MAX_RETRY 67*/
+#define SCM_EBUSY_MAX_RETRY 100
 
 #define N_EXT_SCM_ARGS 7
 #define FIRST_EXT_ARG_IDX 3

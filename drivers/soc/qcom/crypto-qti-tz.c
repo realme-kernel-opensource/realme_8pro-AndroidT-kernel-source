@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020, Linux Foundation. All rights reserved.
- *
+ * Copyright (C) 2021 Oplus. All rights reserved.
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
  * only version 2 as published by the Free Software Foundation.
@@ -62,10 +62,14 @@ int crypto_qti_program_key(struct crypto_vops_qti_entry *ice_entry,
 	desc.args[4] = data_unit_mask;
 
 
-	err = scm_call2_noretry(smc_id, &desc);
-	if (err)
+	/*err = scm_call2_noretry(smc_id, &desc);*/
+	err = scm_call2(smc_id, &desc);
+	if (err) {
 		pr_err("%s:SCM call Error: 0x%x slot %d\n",
 				__func__, err, slot);
+		/* system should not to continue */
+		panic("%s:SCM call Error: 0x%x slot %d\n", __func__, err, slot);
+	}
 
 	return err;
 }

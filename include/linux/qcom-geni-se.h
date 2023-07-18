@@ -112,6 +112,8 @@ struct se_geni_rsc {
 	struct pinctrl *geni_pinctrl;
 	struct pinctrl_state *geni_gpio_active;
 	struct pinctrl_state *geni_gpio_sleep;
+	struct pinctrl_state *geni_gpio_pulldown;
+	struct pinctrl_state *geni_gpio_pullup;
 	int clk_freq_out;
 	struct se_rsc_ssr rsc_ssr;
 };
@@ -119,7 +121,10 @@ struct se_geni_rsc {
 #define PINCTRL_DEFAULT	"default"
 #define PINCTRL_ACTIVE	"active"
 #define PINCTRL_SLEEP	"sleep"
-
+#ifdef OPLUS_FEATURE_CHG_BASIC
+#define PINCTRL_PULLDOWN	"pulldown"
+#define PINCTRL_PULLUP		"pullup"
+#endif
 #define KHz(freq) (1000 * (freq))
 
 /* Common SE registers */
